@@ -8,7 +8,9 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"log"
+	"os"
 	"runtime"
+	"strconv"
 	"time"
 )
 
@@ -202,7 +204,14 @@ func (t *Torrent) Download() ([]byte, error) {
 		for donePieces < len(t.PieceHashes) {
 			res := <-results
 			begin, end := t.calculateBoundsForPiece(res.index)
+
+			// save pieces into files instead of memory
+			file, _ := os.Create("./downloaded/." + t.Name + strconv.Itoa(res.index) + ".temp")
+			defer file.Close()
+			file.Write(res.buf)
+
 			copy(buf[begin:end], res.buf)
+
 			donePieces++
 
 			percent := float64(donePieces) / float64(len(t.PieceHashes)) * 100
@@ -211,6 +220,7 @@ func (t *Torrent) Download() ([]byte, error) {
 		}
 		close(doneCh)
 	}()
+
 	<-doneCh
 
 	return buf, nil

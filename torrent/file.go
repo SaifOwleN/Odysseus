@@ -8,7 +8,9 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"log"
+	"math"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/jackpal/bencode-go"
@@ -44,6 +46,7 @@ type TorrentFile struct {
 	Files        []FileInfo
 	Name         string
 	PieceLength  int
+	PiecesNum    int
 }
 
 func (t *TorrentFile) DownloadToFile(path string) error {
@@ -67,10 +70,6 @@ func (t *TorrentFile) DownloadToFile(path string) error {
 		}
 		// close(peersChan) // Close the channel once all peer requests are done
 	}()
-
-	// if err != nil {
-	// 	return err
-	// }
 
 	length := t.Length
 
@@ -109,16 +108,44 @@ func (t *TorrentFile) DownloadToFile(path string) error {
 				end = len(buf)
 			}
 
-			_, err = outFile.Write(buf[begin:end])
-			if err != nil {
-				outFile.Close()
-				return err
+			pieceIndex := int(math.Floor(float64(begin) / float64(t.PieceLength)))
+			pieceStart := begin - (pieceIndex * t.PieceLength) // start byte of the first piece
+			spanLen := int(math.Ceil(float64(file.Length) / float64(t.PieceLength)))
+			pieceEnd := end - (t.PieceLength * (pieceIndex + spanLen - 1)) // end byte of the last piece
+			fmt.Println("pieceIndex", pieceIndex)
+			fmt.Println("pieceStart", pieceStart)
+			fmt.Println("spanLen", spanLen)
+			fmt.Println("pieceEnd", pieceEnd)
+
+			for in := range spanLen {
+				piece, _ := os.ReadFile("./downloaded/." + t.Name + strconv.Itoa(in+pieceIndex) + ".temp")
+				start := 0
+				last := len(piece)
+				if in == 0 {
+					start = int(math.Max(float64(pieceStart), 0))
+				}
+
+				if in == spanLen-1 {
+					last = pieceEnd
+				}
+				// fmt.Printf("begin %d, end %d \n", start, last)
+
+				_, err := outFile.Write(piece[start:last])
+				if err != nil {
+					outFile.Close()
+					return err
+				}
+				// fmt.Print(strconv.Itoa(in) + " | ")
 			}
+
+			// _, err = outFile.Write(buf[begin:end])
+			// if err != nil {
+			// 	outFile.Close()
+			// 	return err
+			// }
 			begin = end
 			outFile.Close()
 		}
-		fmt.Println(buf[end:])
-
 	}
 
 	outFile, err := os.Create(path)
@@ -206,6 +233,7 @@ func (bto *BencodeTorrent) ToTorrentFile() (TorrentFile, error) {
 		Files:        bto.Info.Files,
 		PieceLength:  bto.Info.PieceLength,
 		Length:       length,
+		PiecesNum:    length / bto.Info.PieceLength,
 	}
 	return t, nil
 }
